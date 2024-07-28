@@ -331,9 +331,133 @@ for layer_name, layer_activation in zip(layer_names, activations):
             display_grid[col * size: (col + 1) * size, row * size: (row + 1) * size] = channel_image
             
             
+# ====================================================
+# ====================================================
+# 5 .4 .3 . Визуализация тепловых карт активации класса
 
-5 .4 .3 . Визуализация тепловых карт активации класса
+# В этом разделе описывается еще один прием визуализации, позволяющий понять, какие части данного изображения помогли сверточной нейронной сети принять окончательное решение о его классификации. Это полезно для отладки процесса принятия решений в сверточной нейронной сети, особенно в случае ошибок клас- сификации. Он также помогает определить местоположение конкретных объектов на изображении.
 
-В этом разделе описывается еще один прием визуализации, позволяющий понять, какие части данного изображения помогли сверточной нейронной сети принять окончательное решение о его классификации. Это полезно для отладки процесса принятия решений в сверточной нейронной сети, особенно в случае ошибок клас- сификации. Он также помогает определить местоположение конкретных объектов на изображении.
+# Категория методов, описываемых здесь, называется визуализацией карты акти- вации класса (Class Activation Map, CAM)
 
-Категория методов, описываемых здесь, называется визуализацией карты акти- вации класса (Class Activation Map, CAM)
+# Chapter 5 not all 
+
+
+from keras.applications.vgg16 import VGG16
+from keras import backend as K
+
+# from keras.applications import VGG16
+
+model = VGG16(weights='imagenet')
+
+
+from keras.preprocessing import image
+
+from keras.applications.vgg16 import preprocess_input, decode_predictions
+from tensorflow.keras.applications.vgg16 import preprocess_input, decode_predictions
+
+import numpy as np
+import tensorflow as tf
+
+
+# Локальный путь к целевому изображению
+img_path = '/Users/ivan/Vscodebprojects/AIStudy/slon2.jpg'
+img_path2 = '/Users/ivan/Vscodebprojects/AIStudy/slon.png'
+
+
+# Изображение 224 × 224 в формате библиотеки Python Imaging Library (PIL)
+img = image.load_img(img_path, target_size=(224, 224))
+
+
+# 1 - Массив Numpy с числами типа float32, имеющий форму (224, 224, 3)
+# 2 - Добавление размерности для преобразования массива в пакет с формой (1, 224, 224, 3)
+# 3 Предварительная обработка пакета (нормализация каналов цвета)
+
+
+x = image.img_to_array(img) #1
+
+x = np.expand_dims(x, axis=0) #2
+x = preprocess_input(x) #3
+
+# Теперь можно передать изображение в предварительно обученную сеть и декоди- ровать полученный вектор в удобочитаемый формат:
+
+preds = model.predict(x)
+print('Predicted:', decode_predictions(preds, top=3)[0])
+
+#on mac not correct ... 
+# Для визуализации части изображения, наиболее соответствующей классу «афри- канский слон», выполним процедуру Grad-CAM.
+
+# Элемент «африканский
+# слон» в векторе прогнозов
+african_elephant_output = model.output[:, 386]
+
+#Выходная карта признаков слоя block5_ conv3, последнего сверточного слоя
+# в сети VGG16
+
+last_conv_layer = model.get_layer('block5_conv3')
+
+
+# Использование GradientTape для вычисления градиентов
+with tf.GradientTape() as tape:
+    last_conv_layer_output = last_conv_layer.output
+    tape.watch(last_conv_layer_output)
+    preds = model(x)
+    african_elephant_output = preds[:, 386]
+
+
+#Градиент класса «африканский слон» для выходной карты признаков слоя block5_conv3
+grads = K.gradients(african_elephant_output, last_conv_layer.output)[0]
+
+#Вектор с формой (512,), каждый элемент которого определяет интенсивность градиента для заданного канала в карте признаков
+pooled_grads = K.mean(grads, axis=(0, 1, 2))
+
+
+iterate = K.function([model.input],
+[pooled_grads, last_conv_layer.output[0]]) # 1
+
+pooled_grads_value, conv_layer_output_value = iterate([x]) #2
+
+for i in range(512):
+    conv_layer_output_value[:, :, i] *= pooled_grads_value[i] #3
+    
+    
+heatmap = np.mean(conv_layer_output_value, axis=-1) #4
+
+
+#  1 Значения этих двух величин в виде массивов Numpy для данного
+# образца изображения двух слонов
+
+#2  Позволяет получить доступ к значениям только что определенных 
+# величин: pooled_ grads и выходной карте
+# признаков слоя block5_conv3 для заданного изображения
+
+
+# 3Умножает каждый канал в карте признаков на 
+# «важность этого канала» для класса «слон
+
+#4 Среднее для каналов в полученной 
+# карте признаков — это тепловая карта активации класса
+
+# Листинг 5.43. Заключительная обработка тепловой карты
+
+heatmap = np.maximum(heatmap, 0)
+heatmap /= np.max(heatmap) 
+plt.matshow(heatmap)
+
+
+# В заключение используем библиотеку OpenCV, чтобы получить фотографию сло- нов с наложенной на нее тепловой картой (рис. 5.36).
+# Листинг 5.44. Наложение тепловой карты на исходное изображение
+
+import cv2
+img = cv2.imread(img_path)
+# Загрузка исходного изображения
+# с помощью cv2
+
+
+heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
+heatmap = np.uint8(255 * heatmap)
+heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+superimposed_img = heatmap * 0.4 + img
+cv2.imwrite('/Users/fchollet/Downloads/elephant_cam.jpg', superimposed_img)
+
+# Этот прием визуализации помогает ответить на два важных вопроса: Почему сеть решила, что на фотографии изображен африканский слон? Где на фотографии находится африканский слон?
+# Интересно отметить, что уши слоненка оказались сильно активированы: вероятно, именно по этому признаку сеть отличает африканских слонов от индийских.
