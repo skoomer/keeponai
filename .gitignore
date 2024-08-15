@@ -1,0 +1,8 @@
+myvenv
+*.pdf
+targets.md
+NOTES.md
+*.jpg
+*.jpeg
+*.rgb
+*.txt
