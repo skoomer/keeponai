@@ -23,3 +23,12 @@ new_model1920.h5
 .vscode/
 *.png
 my_log_dir/
+
+.*my_log_dir
+*.csv
+.*keras
+my_model_board2/
+
+.*index
+
+__pycache__
